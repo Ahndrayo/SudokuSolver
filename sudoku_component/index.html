@@ -36,7 +36,7 @@
       border-radius: 0;
       outline: none;
       background: #ffffff;
-      color: #111111;
+      color: #1f5fbf;
       font-size: clamp(1.1rem, 3vw, 1.55rem);
       text-align: center;
     }
@@ -53,9 +53,23 @@
       font-weight: 700;
     }
 
-    .sudoku-cell.solution-cell {
+    .sudoku-cell.answer-cell {
       color: #1f5fbf;
       font-weight: 400;
+    }
+
+    .sudoku-cell.correct-cell {
+      background: #e8f5e9;
+      color: #1f5fbf;
+    }
+
+    .sudoku-cell.incorrect-cell {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .sudoku-cell.blank-cell {
+      background: #fff8e1;
     }
 
     .sudoku-cell[readonly] {
@@ -72,21 +86,25 @@
     }
 
     .actions {
-      display: flex;
-      justify-content: center;
-      gap: 0.75rem;
-      margin-top: 0.75rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+      max-width: 630px;
+      margin: 0.75rem auto 0;
+      gap: 0.6rem;
     }
 
     .action-button {
-      min-width: 6rem;
-      padding: 0.55rem 0.9rem;
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      padding: 0.6rem 0.75rem;
       border: 1px solid #c8c8c8;
       border-radius: 0.4rem;
       background: #ffffff;
       color: #222222;
       cursor: pointer;
       font-size: 0.9rem;
+      white-space: nowrap;
     }
 
     .action-button:hover {
@@ -105,21 +123,44 @@
       color: #888888;
       cursor: not-allowed;
     }
+
+    .hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div id="grid" class="sudoku-grid" aria-label="Sudoku grid"></div>
   <div class="actions">
-    <button id="solve" class="action-button primary" type="button">Solve</button>
-    <button id="clear" class="action-button" type="button">Clear</button>
-    <button id="example" class="action-button" type="button">Load example</button>
+    <button id="check" class="action-button primary" type="button">Check Answer</button>
+    <button id="reset" class="action-button" type="button">Reset Answers</button>
+    <button id="new" class="action-button" type="button">New Puzzle</button>
+    <button id="reveal" class="action-button" type="button">Reveal Solution</button>
+    <button id="custom" class="action-button" type="button">Custom Puzzle</button>
+    <button id="start" class="action-button primary hidden" type="button">Start Puzzle</button>
+    <button id="clear-board" class="action-button hidden" type="button">Clear Board</button>
+    <button id="cancel-custom" class="action-button hidden" type="button">Cancel</button>
   </div>
 
   <script>
     const GRID_SIZE = 9;
     const gridElement = document.getElementById("grid");
-    const solveButton = document.getElementById("solve");
     const inputs = [];
+    const actionButtons = {
+      check: document.getElementById("check"),
+      reset: document.getElementById("reset"),
+      newPuzzle: document.getElementById("new"),
+      reveal: document.getElementById("reveal"),
+      custom: document.getElementById("custom"),
+      start: document.getElementById("start"),
+      clearBoard: document.getElementById("clear-board"),
+      cancelCustom: document.getElementById("cancel-custom"),
+    };
+
+    let currentMode = "play";
+    let currentClues = [];
+    let currentSolution = null;
+    let currentCheckState = "ready";
 
     function sendMessage(type, data) {
       window.parent.postMessage({
@@ -159,22 +200,72 @@
       inputs[row * GRID_SIZE + column].select();
     }
 
-    function updateCellStyle(input, row, column, clueGrid, solved) {
-      input.classList.remove("clue-cell", "solution-cell");
-      const value = input.value.trim();
-      if (value === "") return;
+    function updateCellStyle(input, row, column) {
+      input.classList.remove(
+        "clue-cell",
+        "answer-cell",
+        "correct-cell",
+        "incorrect-cell",
+        "blank-cell",
+      );
 
-      if (!solved || clueGrid?.[row]?.[column]) {
+      const value = input.value.trim();
+      const isClue = currentMode === "play" && currentClues?.[row]?.[column];
+      if (isClue) {
         input.classList.add("clue-cell");
+        return;
+      }
+
+      if (currentMode === "setup") {
+        if (value !== "") input.classList.add("clue-cell");
+        return;
+      }
+
+      if (value === "") {
+        if (currentCheckState === "checked") {
+          input.classList.add("blank-cell");
+        }
+        return;
+      }
+
+      if (
+        currentCheckState === "checked" ||
+        currentCheckState === "complete" ||
+        currentCheckState === "revealed"
+      ) {
+        if (currentSolution?.[row]?.[column] === Number(value)) {
+          input.classList.add("correct-cell");
+        } else {
+          input.classList.add("incorrect-cell");
+        }
       } else {
-        input.classList.add("solution-cell");
+        input.classList.add("answer-cell");
       }
     }
 
-    function createGrid(initialGrid, clueGrid, solved) {
+    function updateActions() {
+      const setup = currentMode === "setup";
+      [actionButtons.check, actionButtons.reset, actionButtons.newPuzzle,
+        actionButtons.reveal, actionButtons.custom].forEach((button) => {
+        button.classList.toggle("hidden", setup);
+      });
+      [actionButtons.start, actionButtons.clearBoard,
+        actionButtons.cancelCustom].forEach((button) => {
+        button.classList.toggle("hidden", !setup);
+      });
+
+      actionButtons.check.disabled =
+        currentCheckState === "complete" || currentCheckState === "revealed";
+    }
+
+    function createGrid(initialGrid, clueGrid, solutionGrid, mode, checkState) {
+      currentMode = mode;
+      currentClues = clueGrid || [];
+      currentSolution = solutionGrid || null;
+      currentCheckState = checkState || "ready";
       gridElement.innerHTML = "";
       inputs.length = 0;
-      solveButton.disabled = solved;
+      updateActions();
 
       for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let column = 0; column < GRID_SIZE; column += 1) {
@@ -185,16 +276,21 @@
           input.maxLength = 1;
           input.autocomplete = "off";
           input.setAttribute("aria-label", `Row ${row + 1}, Column ${column + 1}`);
-          input.readOnly = solved;
-          input.tabIndex = solved ? -1 : 0;
 
-          const initialValue = initialGrid?.[row]?.[column] || "";
-          input.value = initialValue === 0 ? "" : String(initialValue);
-          updateCellStyle(input, row, column, clueGrid, solved);
+          const clue = currentClues?.[row]?.[column] || 0;
+          const answer = initialGrid?.[row]?.[column] || 0;
+          input.value = String(clue || answer || "");
+          input.readOnly = currentMode === "play" && (
+            Boolean(clue) ||
+            currentCheckState === "complete" ||
+            currentCheckState === "revealed"
+          );
+          input.tabIndex = input.readOnly ? -1 : 0;
+          updateCellStyle(input, row, column);
 
           input.addEventListener("input", () => {
             input.value = input.value.replace(/[^1-9]/g, "").slice(0, 1);
-            updateCellStyle(input, row, column, clueGrid, solved);
+            updateCellStyle(input, row, column);
           });
 
           input.addEventListener("keydown", (event) => {
@@ -220,16 +316,36 @@
       setFrameHeight();
     }
 
-    solveButton.addEventListener("click", () => {
-      setComponentValue({ action: "solve", grid: getGrid() });
+    actionButtons.check.addEventListener("click", () => {
+      setComponentValue({ action: "check", grid: getGrid() });
     });
 
-    document.getElementById("clear").addEventListener("click", () => {
-      setComponentValue({ action: "clear", grid: getGrid() });
+    actionButtons.reset.addEventListener("click", () => {
+      setComponentValue({ action: "reset_answers", grid: getGrid() });
     });
 
-    document.getElementById("example").addEventListener("click", () => {
-      setComponentValue({ action: "load_example", grid: getGrid() });
+    actionButtons.newPuzzle.addEventListener("click", () => {
+      setComponentValue({ action: "new_puzzle", grid: getGrid() });
+    });
+
+    actionButtons.reveal.addEventListener("click", () => {
+      setComponentValue({ action: "reveal", grid: getGrid() });
+    });
+
+    actionButtons.custom.addEventListener("click", () => {
+      setComponentValue({ action: "custom_puzzle", grid: getGrid() });
+    });
+
+    actionButtons.start.addEventListener("click", () => {
+      setComponentValue({ action: "start_puzzle", grid: getGrid() });
+    });
+
+    actionButtons.clearBoard.addEventListener("click", () => {
+      setComponentValue({ action: "clear_board", grid: getGrid() });
+    });
+
+    actionButtons.cancelCustom.addEventListener("click", () => {
+      setComponentValue({ action: "cancel_custom", grid: getGrid() });
     });
 
     window.addEventListener("message", (event) => {
@@ -237,7 +353,9 @@
         createGrid(
           event.data.args.grid || [],
           event.data.args.clues || [],
-          event.data.args.solved === true,
+          event.data.args.solution || null,
+          event.data.args.mode || "play",
+          event.data.args.check_state || "ready",
         );
       }
     });
