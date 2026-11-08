@@ -12,10 +12,13 @@ From the project directory, activate the existing virtual environment and run:
 python -m streamlit run app.py
 ```
 
-Enter givens as numbers from 1 to 9 and leave unknown cells blank. The grid
-supports Backspace for clearing and arrow keys for moving between cells. The
-app validates duplicate givens before building a fresh CPLEX model for each
-solve.
+The app starts with a puzzle whose clues are immutable. Enter answers in the
+blue cells, then use `Check Answer`. Correct, incorrect, and blank cells are
+highlighted without replacing the player’s entries. The grid also supports
+Backspace for clearing and arrow keys for moving between cells.
+
+Use `Custom Puzzle` to enter your own clues, then click `Start Puzzle` to lock
+them before playing.
 
 ## Run the tests
 

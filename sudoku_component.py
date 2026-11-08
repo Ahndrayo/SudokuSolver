@@ -17,7 +17,9 @@ def sudoku_grid(
     *,
     grid: list[list[int]],
     clues: list[list[int]],
-    solved: bool,
+    solution: list[list[int]] | None,
+    mode: str,
+    check_state: str,
     key: str,
 ) -> dict | None:
     """Render the Sudoku grid and return an action when a button is pressed."""
@@ -25,7 +27,9 @@ def sudoku_grid(
     return _COMPONENT(
         grid=grid,
         clues=clues,
-        solved=solved,
+        solution=solution,
+        mode=mode,
+        check_state=check_state,
         key=key,
         default=None,
     )
