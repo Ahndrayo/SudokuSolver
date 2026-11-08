@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #ffffff;
+    }
+
+    .sudoku-grid {
+      display: grid;
+      grid-template-columns: repeat(9, minmax(0, 1fr));
+      max-width: 630px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-top: 2px solid #111111;
+      border-left: 2px solid #111111;
+    }
+
+    .sudoku-cell {
+      box-sizing: border-box;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      border-right: 1px solid #333333;
+      border-bottom: 1px solid #333333;
+      border-radius: 0;
+      outline: none;
+      background: #ffffff;
+      color: #111111;
+      font-size: clamp(1.1rem, 3vw, 1.55rem);
+      text-align: center;
+    }
+
+    .sudoku-cell:focus {
+      position: relative;
+      z-index: 1;
+      outline: 2px solid #ff4b4b;
+      outline-offset: -2px;
+    }
+
+    .sudoku-cell:nth-child(3n) {
+      border-right: 3px solid #111111;
+    }
+
+    .sudoku-cell:nth-child(n + 19):nth-child(-n + 27),
+    .sudoku-cell:nth-child(n + 46):nth-child(-n + 54) {
+      border-bottom: 3px solid #111111;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    .action-button {
+      min-width: 6rem;
+      padding: 0.55rem 0.9rem;
+      border: 1px solid #c8c8c8;
+      border-radius: 0.4rem;
+      background: #ffffff;
+      color: #222222;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .action-button:hover {
+      border-color: #777777;
+    }
+
+    .action-button.primary {
+      border-color: #ff4b4b;
+      background: #ff4b4b;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div id="grid" class="sudoku-grid" aria-label="Sudoku grid"></div>
+  <div class="actions">
+    <button id="solve" class="action-button primary" type="button">Solve</button>
+    <button id="clear" class="action-button" type="button">Clear</button>
+    <button id="example" class="action-button" type="button">Load example</button>
+  </div>
+
+  <script>
+    const GRID_SIZE = 9;
+    const gridElement = document.getElementById("grid");
+    const inputs = [];
+
+    function sendMessage(type, data) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type,
+        ...data,
+      }, "*");
+    }
+
+    function setFrameHeight() {
+      sendMessage("streamlit:setFrameHeight", {
+        height: document.body.scrollHeight,
+      });
+    }
+
+    function setComponentValue(value) {
+      sendMessage("streamlit:setComponentValue", { value });
+    }
+
+    function getGrid() {
+      return inputs.map((input) => {
+        const value = input.value.trim();
+        return value === "" ? 0 : Number(value);
+      }).reduce((grid, value, index) => {
+        const row = Math.floor(index / GRID_SIZE);
+        if (!grid[row]) grid[row] = [];
+        grid[row].push(value);
+        return grid;
+      }, []);
+    }
+
+    function focusCell(row, column) {
+      if (row < 0 || row >= GRID_SIZE || column < 0 || column >= GRID_SIZE) {
+        return;
+      }
+      inputs[row * GRID_SIZE + column].focus();
+      inputs[row * GRID_SIZE + column].select();
+    }
+
+    function createGrid(initialGrid) {
+      gridElement.innerHTML = "";
+      inputs.length = 0;
+
+      for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let column = 0; column < GRID_SIZE; column += 1) {
+          const input = document.createElement("input");
+          input.className = "sudoku-cell";
+          input.type = "text";
+          input.inputMode = "numeric";
+          input.maxLength = 1;
+          input.autocomplete = "off";
+          input.setAttribute("aria-label", `Row ${row + 1}, Column ${column + 1}`);
+
+          const initialValue = initialGrid?.[row]?.[column] || "";
+          input.value = initialValue === 0 ? "" : String(initialValue);
+
+          input.addEventListener("input", () => {
+            input.value = input.value.replace(/[^1-9]/g, "").slice(0, 1);
+          });
+
+          input.addEventListener("keydown", (event) => {
+            const moves = {
+              ArrowLeft: [0, -1],
+              ArrowRight: [0, 1],
+              ArrowUp: [-1, 0],
+              ArrowDown: [1, 0],
+            };
+
+            if (moves[event.key]) {
+              event.preventDefault();
+              const [rowDelta, columnDelta] = moves[event.key];
+              focusCell(row + rowDelta, column + columnDelta);
+            }
+          });
+
+          gridElement.appendChild(input);
+          inputs.push(input);
+        }
+      }
+
+      setFrameHeight();
+    }
+
+    document.getElementById("solve").addEventListener("click", () => {
+      setComponentValue({ action: "solve", grid: getGrid() });
+    });
+
+    document.getElementById("clear").addEventListener("click", () => {
+      setComponentValue({ action: "clear", grid: getGrid() });
+    });
+
+    document.getElementById("example").addEventListener("click", () => {
+      setComponentValue({ action: "load_example", grid: getGrid() });
+    });
+
+    window.addEventListener("message", (event) => {
+      if (event.data.type === "streamlit:render") {
+        createGrid(event.data.args.grid || []);
+      }
+    });
+
+    sendMessage("streamlit:componentReady", { apiVersion: 1 });
+  </script>
+</body>
+</html>
+
