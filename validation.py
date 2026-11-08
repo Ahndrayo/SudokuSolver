@@ -96,6 +96,43 @@ def _duplicate_errors(grid: Sequence[Sequence[int]]) -> list[str]:
     return errors
 
 
+def conflicting_cells(grid: Sequence[Sequence[int]]) -> list[tuple[int, int]]:
+    """Return coordinates involved in duplicate row, column, or box values."""
+
+    if len(grid) != GRID_SIZE or any(len(row) != GRID_SIZE for row in grid):
+        return []
+
+    conflicts: set[tuple[int, int]] = set()
+
+    def mark_duplicates(positions: list[tuple[int, int]]) -> None:
+        locations: dict[int, list[tuple[int, int]]] = {}
+        for row, column in positions:
+            value = grid[row][column]
+            if value:
+                locations.setdefault(value, []).append((row, column))
+        for duplicate_locations in locations.values():
+            if len(duplicate_locations) > 1:
+                conflicts.update(duplicate_locations)
+
+    for row in range(GRID_SIZE):
+        mark_duplicates([(row, column) for column in range(GRID_SIZE)])
+
+    for column in range(GRID_SIZE):
+        mark_duplicates([(row, column) for row in range(GRID_SIZE)])
+
+    for box_row in range(0, GRID_SIZE, BOX_SIZE):
+        for box_column in range(0, GRID_SIZE, BOX_SIZE):
+            mark_duplicates(
+                [
+                    (row, column)
+                    for row in range(box_row, box_row + BOX_SIZE)
+                    for column in range(box_column, box_column + BOX_SIZE)
+                ]
+            )
+
+    return sorted(conflicts)
+
+
 def _duplicates(values: Sequence[int] | object) -> list[int]:
     seen: set[int] = set()
     duplicates: set[int] = set()

@@ -14,6 +14,46 @@
       background: #ffffff;
     }
 
+    .mode-bar,
+    .actions {
+      display: grid;
+      max-width: 630px;
+      margin: 0 auto;
+      gap: 0.6rem;
+    }
+
+    .mode-bar {
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 0.75rem;
+    }
+
+    .mode-button,
+    .action-button {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #c8c8c8;
+      border-radius: 0.4rem;
+      background: #ffffff;
+      color: #222222;
+      cursor: pointer;
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .mode-button.active {
+      border-color: #333333;
+      background: #333333;
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .mode-button:hover,
+    .action-button:hover {
+      border-color: #777777;
+    }
+
     .sudoku-grid {
       display: grid;
       grid-template-columns: repeat(9, minmax(0, 1fr));
@@ -63,7 +103,8 @@
       color: #1f5fbf;
     }
 
-    .sudoku-cell.incorrect-cell {
+    .sudoku-cell.incorrect-cell,
+    .sudoku-cell.invalid-cell {
       background: #ffebee;
       color: #c62828;
     }
@@ -86,34 +127,19 @@
     }
 
     .actions {
-      display: grid;
       grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-      max-width: 630px;
-      margin: 0.75rem auto 0;
-      gap: 0.6rem;
-    }
-
-    .action-button {
-      box-sizing: border-box;
-      width: 100%;
-      min-width: 0;
-      padding: 0.6rem 0.75rem;
-      border: 1px solid #c8c8c8;
-      border-radius: 0.4rem;
-      background: #ffffff;
-      color: #222222;
-      cursor: pointer;
-      font-size: 0.9rem;
-      white-space: nowrap;
-    }
-
-    .action-button:hover {
-      border-color: #777777;
+      margin-top: 0.75rem;
     }
 
     .action-button.primary {
       border-color: #ff4b4b;
       background: #ff4b4b;
+      color: #ffffff;
+    }
+
+    .action-button.create {
+      border-color: #2d6cdf;
+      background: #2d6cdf;
       color: #ffffff;
     }
 
@@ -130,37 +156,46 @@
   </style>
 </head>
 <body>
+  <div class="mode-bar">
+    <button id="play-mode" class="mode-button" type="button">Play Puzzle</button>
+    <button id="custom-mode" class="mode-button" type="button">Custom Puzzle</button>
+  </div>
+
   <div id="grid" class="sudoku-grid" aria-label="Sudoku grid"></div>
+
   <div class="actions">
     <button id="check" class="action-button primary" type="button">Check Answer</button>
     <button id="reset" class="action-button" type="button">Reset Answers</button>
     <button id="new" class="action-button" type="button">New Puzzle</button>
     <button id="reveal" class="action-button" type="button">Reveal Solution</button>
-    <button id="custom" class="action-button" type="button">Custom Puzzle</button>
-    <button id="start" class="action-button primary hidden" type="button">Start Puzzle</button>
-    <button id="clear-board" class="action-button hidden" type="button">Clear Board</button>
-    <button id="cancel-custom" class="action-button hidden" type="button">Cancel</button>
+    <button id="create" class="action-button create hidden" type="button">Create Puzzle</button>
+    <button id="clear" class="action-button hidden" type="button">Clear</button>
+    <button id="cancel" class="action-button hidden" type="button">Cancel</button>
   </div>
 
   <script>
     const GRID_SIZE = 9;
     const gridElement = document.getElementById("grid");
     const inputs = [];
+    const modeButtons = {
+      play: document.getElementById("play-mode"),
+      custom: document.getElementById("custom-mode"),
+    };
     const actionButtons = {
       check: document.getElementById("check"),
       reset: document.getElementById("reset"),
       newPuzzle: document.getElementById("new"),
       reveal: document.getElementById("reveal"),
-      custom: document.getElementById("custom"),
-      start: document.getElementById("start"),
-      clearBoard: document.getElementById("clear-board"),
-      cancelCustom: document.getElementById("cancel-custom"),
+      create: document.getElementById("create"),
+      clear: document.getElementById("clear"),
+      cancel: document.getElementById("cancel"),
     };
 
     let currentMode = "play";
     let currentClues = [];
     let currentSolution = null;
     let currentCheckState = "ready";
+    let currentValidationCells = [];
 
     function sendMessage(type, data) {
       window.parent.postMessage({
@@ -192,6 +227,26 @@
       }, []);
     }
 
+    function hasProgress() {
+      return currentMode === "setup"
+        ? inputs.some((input) => input.value.trim() !== "")
+        : currentCheckState !== "ready" || inputs.some((input, index) => {
+            const row = Math.floor(index / GRID_SIZE);
+            const column = index % GRID_SIZE;
+            return !currentClues?.[row]?.[column] && input.value.trim() !== "";
+          });
+    }
+
+    function confirmModeChange(message) {
+      return !hasProgress() || window.confirm(message);
+    }
+
+    function hasValidationCell(row, column) {
+      return currentValidationCells.some(
+        (cell) => cell[0] === row && cell[1] === column,
+      );
+    }
+
     function focusCell(row, column) {
       if (row < 0 || row >= GRID_SIZE || column < 0 || column >= GRID_SIZE) {
         return;
@@ -207,10 +262,16 @@
         "correct-cell",
         "incorrect-cell",
         "blank-cell",
+        "invalid-cell",
       );
 
       const value = input.value.trim();
       const isClue = currentMode === "play" && currentClues?.[row]?.[column];
+      if (hasValidationCell(row, column) && value !== "") {
+        input.classList.add("invalid-cell");
+        return;
+      }
+
       if (isClue) {
         input.classList.add("clue-cell");
         return;
@@ -246,23 +307,24 @@
     function updateActions() {
       const setup = currentMode === "setup";
       [actionButtons.check, actionButtons.reset, actionButtons.newPuzzle,
-        actionButtons.reveal, actionButtons.custom].forEach((button) => {
+        actionButtons.reveal].forEach((button) => {
         button.classList.toggle("hidden", setup);
       });
-      [actionButtons.start, actionButtons.clearBoard,
-        actionButtons.cancelCustom].forEach((button) => {
-        button.classList.toggle("hidden", !setup);
-      });
+      [actionButtons.create, actionButtons.clear, actionButtons.cancel]
+        .forEach((button) => button.classList.toggle("hidden", !setup));
 
+      modeButtons.play.classList.toggle("active", !setup);
+      modeButtons.custom.classList.toggle("active", setup);
       actionButtons.check.disabled =
         currentCheckState === "complete" || currentCheckState === "revealed";
     }
 
-    function createGrid(initialGrid, clueGrid, solutionGrid, mode, checkState) {
+    function createGrid(initialGrid, clueGrid, solutionGrid, mode, checkState, validationCells) {
       currentMode = mode;
       currentClues = clueGrid || [];
       currentSolution = solutionGrid || null;
       currentCheckState = checkState || "ready";
+      currentValidationCells = validationCells || [];
       gridElement.innerHTML = "";
       inputs.length = 0;
       updateActions();
@@ -290,6 +352,9 @@
 
           input.addEventListener("input", () => {
             input.value = input.value.replace(/[^1-9]/g, "").slice(0, 1);
+            currentValidationCells = currentValidationCells.filter(
+              (cell) => cell[0] !== row || cell[1] !== column,
+            );
             updateCellStyle(input, row, column);
           });
 
@@ -316,6 +381,20 @@
       setFrameHeight();
     }
 
+    modeButtons.custom.addEventListener("click", () => {
+      if (currentMode === "setup") return;
+      if (window.confirm("Switching to Custom Puzzle will discard the current puzzle and any progress. Continue?")) {
+        setComponentValue({ action: "custom_puzzle", grid: getGrid() });
+      }
+    });
+
+    modeButtons.play.addEventListener("click", () => {
+      if (currentMode === "play") return;
+      if (confirmModeChange("Leave Custom Puzzle mode and discard this custom grid?")) {
+        setComponentValue({ action: "play_mode", grid: getGrid() });
+      }
+    });
+
     actionButtons.check.addEventListener("click", () => {
       setComponentValue({ action: "check", grid: getGrid() });
     });
@@ -332,19 +411,15 @@
       setComponentValue({ action: "reveal", grid: getGrid() });
     });
 
-    actionButtons.custom.addEventListener("click", () => {
-      setComponentValue({ action: "custom_puzzle", grid: getGrid() });
+    actionButtons.create.addEventListener("click", () => {
+      setComponentValue({ action: "create_puzzle", grid: getGrid() });
     });
 
-    actionButtons.start.addEventListener("click", () => {
-      setComponentValue({ action: "start_puzzle", grid: getGrid() });
+    actionButtons.clear.addEventListener("click", () => {
+      setComponentValue({ action: "clear", grid: getGrid() });
     });
 
-    actionButtons.clearBoard.addEventListener("click", () => {
-      setComponentValue({ action: "clear_board", grid: getGrid() });
-    });
-
-    actionButtons.cancelCustom.addEventListener("click", () => {
+    actionButtons.cancel.addEventListener("click", () => {
       setComponentValue({ action: "cancel_custom", grid: getGrid() });
     });
 
@@ -356,6 +431,7 @@
           event.data.args.solution || null,
           event.data.args.mode || "play",
           event.data.args.check_state || "ready",
+          event.data.args.validation_cells || [],
         );
       }
     });

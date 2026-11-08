@@ -20,6 +20,7 @@ def sudoku_grid(
     solution: list[list[int]] | None,
     mode: str,
     check_state: str,
+    validation_cells: list[tuple[int, int]],
     key: str,
 ) -> dict | None:
     """Render the Sudoku grid and return an action when a button is pressed."""
@@ -30,6 +31,7 @@ def sudoku_grid(
         solution=solution,
         mode=mode,
         check_state=check_state,
+        validation_cells=validation_cells,
         key=key,
         default=None,
     )

@@ -17,8 +17,9 @@ blue cells, then use `Check Answer`. Correct, incorrect, and blank cells are
 highlighted without replacing the player’s entries. The grid also supports
 Backspace for clearing and arrow keys for moving between cells.
 
-Use `Custom Puzzle` to enter your own clues, then click `Start Puzzle` to lock
-them before playing.
+Use the `Custom Puzzle` mode to enter your own clues, then click `Create Puzzle`
+to validate and lock them before playing. Invalid clues remain on the grid and
+are highlighted for correction.
 
 ## Run the tests
 
