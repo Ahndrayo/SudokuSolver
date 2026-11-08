@@ -6,6 +6,7 @@ import streamlit as st
 
 from solver import SudokuSolveError, solve_sudoku
 from sudoku_component import sudoku_grid
+from validation import conflicting_cells, validate_grid
 
 
 GRID_SIZE = 9
@@ -56,6 +57,7 @@ def _set_default_puzzle() -> None:
     st.session_state.check_state = "ready"
     st.session_state.last_result = None
     st.session_state.solve_error = None
+    st.session_state.validation_cells = []
 
 
 def _initialise_state() -> None:
@@ -74,6 +76,7 @@ def _initialise_state() -> None:
     st.session_state.setdefault("check_state", "ready")
     st.session_state.setdefault("last_result", None)
     st.session_state.setdefault("solve_error", None)
+    st.session_state.setdefault("validation_cells", [])
 
 
 def _reset_answers() -> None:
@@ -82,12 +85,31 @@ def _reset_answers() -> None:
     st.session_state.check_state = "ready"
     st.session_state.last_result = None
     st.session_state.solve_error = None
+    st.session_state.validation_cells = []
 
 
 def _enter_custom_mode() -> None:
     st.session_state.mode = "setup"
     st.session_state.setup_grid = _empty_grid()
+    st.session_state.player_grid = _empty_grid()
+    st.session_state.solution_grid = None
+    st.session_state.check_state = "ready"
+    st.session_state.last_result = None
     st.session_state.solve_error = None
+    st.session_state.validation_cells = []
+
+
+def _keep_custom_grid_with_error(grid: list[list[int]], message: str) -> None:
+    st.session_state.setup_grid = _copy_grid(grid)
+    st.session_state.validation_cells = conflicting_cells(grid)
+    if not st.session_state.validation_cells:
+        st.session_state.validation_cells = [
+            (row, column)
+            for row in range(GRID_SIZE)
+            for column in range(GRID_SIZE)
+            if grid[row][column]
+        ]
+    st.session_state.solve_error = message
 
 
 def _evaluate_answers(
@@ -136,7 +158,7 @@ def main() -> None:
         display_grid = st.session_state.player_grid
         clues = st.session_state.clue_grid
     else:
-        st.caption("Enter the puzzle clues, then click Start Puzzle.")
+        st.caption("Enter the puzzle clues, then click Create Puzzle.")
         display_grid = st.session_state.setup_grid
         clues = _empty_grid()
 
@@ -146,6 +168,7 @@ def main() -> None:
         solution=st.session_state.solution_grid,
         mode=st.session_state.mode,
         check_state=st.session_state.check_state,
+        validation_cells=st.session_state.validation_cells,
         key=f"sudoku_grid_{st.session_state.component_version}",
     )
 
@@ -211,26 +234,40 @@ def main() -> None:
             st.session_state.component_version += 1
             st.rerun()
 
-        elif action == "start_puzzle" and st.session_state.mode == "setup":
-            try:
-                solution_grid = _solve_clues(visible_grid)
-                st.session_state.mode = "play"
-                st.session_state.clue_grid = _copy_grid(visible_grid)
-                st.session_state.player_grid = _empty_grid()
-                st.session_state.setup_grid = _empty_grid()
-                st.session_state.solution_grid = solution_grid
-                st.session_state.check_state = "ready"
-                st.session_state.last_result = None
-                st.session_state.solve_error = None
-            except SudokuSolveError as error:
-                st.session_state.solve_error = str(error)
+        elif action == "play_mode" and st.session_state.mode == "setup":
+            _set_default_puzzle()
+            st.session_state.component_version += 1
+            st.rerun()
+
+        elif action == "create_puzzle" and st.session_state.mode == "setup":
+            errors = validate_grid(visible_grid)
+            if errors:
+                _keep_custom_grid_with_error(
+                    visible_grid,
+                    "Invalid puzzle:\n" + "\n".join(errors),
+                )
+            else:
+                try:
+                    solution_grid = _solve_clues(visible_grid)
+                    st.session_state.mode = "play"
+                    st.session_state.clue_grid = _copy_grid(visible_grid)
+                    st.session_state.player_grid = _empty_grid()
+                    st.session_state.setup_grid = _empty_grid()
+                    st.session_state.solution_grid = solution_grid
+                    st.session_state.check_state = "ready"
+                    st.session_state.last_result = None
+                    st.session_state.solve_error = None
+                    st.session_state.validation_cells = []
+                except SudokuSolveError as error:
+                    _keep_custom_grid_with_error(visible_grid, str(error))
 
             st.session_state.component_version += 1
             st.rerun()
 
-        elif action == "clear_board" and st.session_state.mode == "setup":
+        elif action == "clear" and st.session_state.mode == "setup":
             st.session_state.setup_grid = _empty_grid()
             st.session_state.solve_error = None
+            st.session_state.validation_cells = []
             st.session_state.component_version += 1
             st.rerun()
 
