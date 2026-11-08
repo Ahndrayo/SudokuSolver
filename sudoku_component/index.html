@@ -48,6 +48,20 @@
       outline-offset: -2px;
     }
 
+    .sudoku-cell.clue-cell {
+      color: #111111;
+      font-weight: 700;
+    }
+
+    .sudoku-cell.solution-cell {
+      color: #1f5fbf;
+      font-weight: 400;
+    }
+
+    .sudoku-cell[readonly] {
+      cursor: default;
+    }
+
     .sudoku-cell:nth-child(3n) {
       border-right: 3px solid #111111;
     }
@@ -84,6 +98,13 @@
       background: #ff4b4b;
       color: #ffffff;
     }
+
+    .action-button:disabled {
+      border-color: #d0d0d0;
+      background: #e5e5e5;
+      color: #888888;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -97,6 +118,7 @@
   <script>
     const GRID_SIZE = 9;
     const gridElement = document.getElementById("grid");
+    const solveButton = document.getElementById("solve");
     const inputs = [];
 
     function sendMessage(type, data) {
@@ -137,9 +159,22 @@
       inputs[row * GRID_SIZE + column].select();
     }
 
-    function createGrid(initialGrid) {
+    function updateCellStyle(input, row, column, clueGrid, solved) {
+      input.classList.remove("clue-cell", "solution-cell");
+      const value = input.value.trim();
+      if (value === "") return;
+
+      if (!solved || clueGrid?.[row]?.[column]) {
+        input.classList.add("clue-cell");
+      } else {
+        input.classList.add("solution-cell");
+      }
+    }
+
+    function createGrid(initialGrid, clueGrid, solved) {
       gridElement.innerHTML = "";
       inputs.length = 0;
+      solveButton.disabled = solved;
 
       for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let column = 0; column < GRID_SIZE; column += 1) {
@@ -150,12 +185,16 @@
           input.maxLength = 1;
           input.autocomplete = "off";
           input.setAttribute("aria-label", `Row ${row + 1}, Column ${column + 1}`);
+          input.readOnly = solved;
+          input.tabIndex = solved ? -1 : 0;
 
           const initialValue = initialGrid?.[row]?.[column] || "";
           input.value = initialValue === 0 ? "" : String(initialValue);
+          updateCellStyle(input, row, column, clueGrid, solved);
 
           input.addEventListener("input", () => {
             input.value = input.value.replace(/[^1-9]/g, "").slice(0, 1);
+            updateCellStyle(input, row, column, clueGrid, solved);
           });
 
           input.addEventListener("keydown", (event) => {
@@ -181,7 +220,7 @@
       setFrameHeight();
     }
 
-    document.getElementById("solve").addEventListener("click", () => {
+    solveButton.addEventListener("click", () => {
       setComponentValue({ action: "solve", grid: getGrid() });
     });
 
@@ -195,7 +234,11 @@
 
     window.addEventListener("message", (event) => {
       if (event.data.type === "streamlit:render") {
-        createGrid(event.data.args.grid || []);
+        createGrid(
+          event.data.args.grid || [],
+          event.data.args.clues || [],
+          event.data.args.solved === true,
+        );
       }
     });
 

@@ -21,7 +21,7 @@ def _example_grid() -> list[list[int]]:
         [6, 0, 0, 1, 9, 5, 0, 0, 0],
         [0, 9, 8, 0, 0, 0, 0, 6, 0],
         [0, 0, 0, 0, 6, 0, 0, 0, 3],
-        [0, 0, 8, 0, 0, 3, 0, 0, 1],
+        [0, 0, 0, 0, 0, 3, 0, 0, 1],
         [0, 0, 0, 0, 2, 0, 0, 0, 6],
         [0, 6, 0, 0, 0, 0, 2, 8, 0],
         [0, 0, 0, 4, 1, 9, 0, 0, 5],
@@ -31,18 +31,22 @@ def _example_grid() -> list[list[int]]:
 
 def _initialise_state() -> None:
     st.session_state.setdefault("input_grid", _empty_grid())
+    st.session_state.setdefault("clue_grid", _empty_grid())
+    st.session_state.setdefault("solved", False)
     st.session_state.setdefault("component_version", 0)
 
 
 def _clear_grid() -> None:
     st.session_state.input_grid = _empty_grid()
-    st.session_state.pop("solution", None)
+    st.session_state.clue_grid = _empty_grid()
+    st.session_state.solved = False
     st.session_state.pop("solve_error", None)
 
 
 def _load_example() -> None:
     st.session_state.input_grid = _example_grid()
-    st.session_state.pop("solution", None)
+    st.session_state.clue_grid = _empty_grid()
+    st.session_state.solved = False
     st.session_state.pop("solve_error", None)
 
 
@@ -55,6 +59,8 @@ def main() -> None:
 
     component_result = sudoku_grid(
         grid=st.session_state.input_grid,
+        clues=st.session_state.clue_grid,
+        solved=st.session_state.solved,
         key=f"sudoku_grid_{st.session_state.component_version}",
     )
 
@@ -62,13 +68,15 @@ def main() -> None:
         action = component_result.get("action")
         grid = component_result.get("grid", st.session_state.input_grid)
 
-        if action == "solve":
+        if action == "solve" and not st.session_state.solved:
+            st.session_state.clue_grid = [row[:] for row in grid]
             st.session_state.input_grid = grid
             try:
-                st.session_state.solution = solve_sudoku(grid)
+                st.session_state.input_grid = solve_sudoku(grid)
+                st.session_state.solved = True
                 st.session_state.pop("solve_error", None)
             except SudokuSolveError as error:
-                st.session_state.solution = None
+                st.session_state.solved = False
                 st.session_state.solve_error = str(error)
 
             st.session_state.component_version += 1
@@ -86,13 +94,6 @@ def main() -> None:
 
     if st.session_state.get("solve_error"):
         st.error(st.session_state.solve_error)
-
-    solution = st.session_state.get("solution")
-    if solution:
-        st.subheader("Solution")
-        for row in solution:
-            st.code(" ".join(str(value) for value in row), language=None)
-
 
 if __name__ == "__main__":
     main()
