@@ -13,8 +13,20 @@ _COMPONENT = components.declare_component(
 )
 
 
-def sudoku_grid(*, grid: list[list[int]], key: str) -> dict | None:
+def sudoku_grid(
+    *,
+    grid: list[list[int]],
+    clues: list[list[int]],
+    solved: bool,
+    key: str,
+) -> dict | None:
     """Render the Sudoku grid and return an action when a button is pressed."""
 
-    return _COMPONENT(grid=grid, key=key, default=None)
+    return _COMPONENT(
+        grid=grid,
+        clues=clues,
+        solved=solved,
+        key=key,
+        default=None,
+    )
 
