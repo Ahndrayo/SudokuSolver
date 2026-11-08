@@ -4,35 +4,31 @@ from __future__ import annotations
 
 import streamlit as st
 
+from puzzles import (
+    Puzzle,
+    available_difficulties,
+    get_puzzles,
+    get_puzzles_by_difficulty,
+)
 from solver import SudokuSolveError, solve_sudoku
 from sudoku_component import sudoku_grid
 from validation import conflicting_cells, validate_grid
 
 
 GRID_SIZE = 9
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 
 def _empty_grid() -> list[list[int]]:
     return [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
 
 
-def _example_grid() -> list[list[int]]:
-    return [
-        [5, 3, 0, 0, 7, 0, 0, 0, 0],
-        [6, 0, 0, 1, 9, 5, 0, 0, 0],
-        [0, 9, 8, 0, 0, 0, 0, 6, 0],
-        [8, 0, 0, 0, 6, 0, 0, 0, 3],
-        [4, 0, 0, 8, 0, 3, 0, 0, 1],
-        [7, 0, 0, 0, 2, 0, 0, 0, 6],
-        [0, 6, 0, 0, 0, 0, 2, 8, 0],
-        [0, 0, 0, 4, 1, 9, 0, 0, 5],
-        [0, 0, 0, 0, 8, 0, 0, 7, 9],
-    ]
-
-
 def _copy_grid(grid: list[list[int]]) -> list[list[int]]:
-    return [row[:] for row in grid]
+    return [list(row) for row in grid]
+
+
+def _catalogue_grid(puzzle: Puzzle) -> list[list[int]]:
+    return _copy_grid(puzzle.grid)
 
 
 def _player_grid_from_visible(
@@ -48,9 +44,9 @@ def _player_grid_from_visible(
     ]
 
 
-def _set_default_puzzle() -> None:
+def _set_puzzle(puzzle: Puzzle) -> None:
     st.session_state.mode = "play"
-    st.session_state.clue_grid = _example_grid()
+    st.session_state.clue_grid = _catalogue_grid(puzzle)
     st.session_state.player_grid = _empty_grid()
     st.session_state.setup_grid = _empty_grid()
     st.session_state.solution_grid = None
@@ -58,6 +54,33 @@ def _set_default_puzzle() -> None:
     st.session_state.last_result = None
     st.session_state.solve_error = None
     st.session_state.validation_cells = []
+    st.session_state.current_puzzle_id = puzzle.id
+    st.session_state.current_puzzle_name = puzzle.name
+    st.session_state.current_difficulty = puzzle.difficulty
+    st.session_state.selected_difficulty = puzzle.difficulty
+
+
+def _puzzles_for_difficulty(difficulty: str) -> tuple[Puzzle, ...]:
+    puzzles = get_puzzles_by_difficulty(difficulty)
+    return puzzles or get_puzzles()
+
+
+def _set_default_puzzle() -> None:
+    difficulty = st.session_state.get(
+        "selected_difficulty",
+        available_difficulties()[0],
+    )
+    _set_puzzle(_puzzles_for_difficulty(difficulty)[0])
+
+
+def _set_next_puzzle() -> None:
+    puzzles = _puzzles_for_difficulty(st.session_state.selected_difficulty)
+    current_id = st.session_state.get("current_puzzle_id")
+    current_index = next(
+        (index for index, puzzle in enumerate(puzzles) if puzzle.id == current_id),
+        -1,
+    )
+    _set_puzzle(puzzles[(current_index + 1) % len(puzzles)])
 
 
 def _initialise_state() -> None:
@@ -69,7 +92,7 @@ def _initialise_state() -> None:
 
     st.session_state.setdefault("component_version", 0)
     st.session_state.setdefault("mode", "play")
-    st.session_state.setdefault("clue_grid", _example_grid())
+    st.session_state.setdefault("clue_grid", _catalogue_grid(get_puzzles()[0]))
     st.session_state.setdefault("player_grid", _empty_grid())
     st.session_state.setdefault("setup_grid", _empty_grid())
     st.session_state.setdefault("solution_grid", None)
@@ -77,6 +100,11 @@ def _initialise_state() -> None:
     st.session_state.setdefault("last_result", None)
     st.session_state.setdefault("solve_error", None)
     st.session_state.setdefault("validation_cells", [])
+    st.session_state.setdefault("selected_difficulty", available_difficulties()[0])
+    default_puzzle = get_puzzles()[0]
+    st.session_state.setdefault("current_puzzle_id", default_puzzle.id)
+    st.session_state.setdefault("current_puzzle_name", default_puzzle.name)
+    st.session_state.setdefault("current_difficulty", default_puzzle.difficulty)
 
 
 def _reset_answers() -> None:
@@ -169,6 +197,23 @@ def main() -> None:
         mode=st.session_state.mode,
         check_state=st.session_state.check_state,
         validation_cells=st.session_state.validation_cells,
+        available_difficulties=list(available_difficulties()),
+        selected_difficulty=st.session_state.selected_difficulty,
+        puzzle_id=(
+            st.session_state.current_puzzle_id
+            if st.session_state.mode == "play"
+            else "custom"
+        ),
+        puzzle_name=(
+            st.session_state.current_puzzle_name
+            if st.session_state.mode == "play"
+            else "Custom puzzle setup"
+        ),
+        difficulty=(
+            st.session_state.current_difficulty
+            if st.session_state.mode == "play"
+            else "Custom"
+        ),
         key=f"sudoku_grid_{st.session_state.component_version}",
     )
 
@@ -209,7 +254,15 @@ def main() -> None:
             st.rerun()
 
         elif action == "new_puzzle":
-            _set_default_puzzle()
+            _set_next_puzzle()
+            st.session_state.component_version += 1
+            st.rerun()
+
+        elif action == "difficulty" and st.session_state.mode == "play":
+            requested_difficulty = component_result.get("difficulty")
+            if requested_difficulty in available_difficulties():
+                st.session_state.selected_difficulty = requested_difficulty
+                _set_default_puzzle()
             st.session_state.component_version += 1
             st.rerun()
 

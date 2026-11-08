@@ -22,6 +22,80 @@
       gap: 0.6rem;
     }
 
+    .puzzle-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      max-width: 630px;
+      margin: 0 auto 0.75rem;
+      gap: 0.6rem;
+      color: #444444;
+      font-size: 0.9rem;
+    }
+
+    .puzzle-heading {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .puzzle-name {
+      color: #222222;
+      font-weight: 700;
+    }
+
+    .puzzle-id {
+      color: #777777;
+      font-size: 0.78rem;
+    }
+
+    .difficulty-tag {
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .difficulty-tag.easy {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .difficulty-tag.medium {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+
+    .difficulty-tag.hard {
+      background: #fff3e0;
+      color: #ef6c00;
+    }
+
+    .difficulty-tag.expert,
+    .difficulty-tag.custom {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
+
+    .difficulty-control {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: #666666;
+      font-size: 0.8rem;
+    }
+
+    .difficulty-control select {
+      padding: 0.3rem 0.45rem;
+      border: 1px solid #c8c8c8;
+      border-radius: 0.35rem;
+      background: #ffffff;
+      color: #333333;
+      font-size: 0.8rem;
+    }
+
     .mode-bar {
       grid-template-columns: 1fr 1fr;
       margin-bottom: 0.75rem;
@@ -156,6 +230,18 @@
   </style>
 </head>
 <body>
+  <div class="puzzle-meta">
+    <div class="puzzle-heading">
+      <span id="puzzle-name" class="puzzle-name"></span>
+      <span id="difficulty-tag" class="difficulty-tag"></span>
+      <span id="puzzle-id" class="puzzle-id"></span>
+    </div>
+    <label id="difficulty-control" class="difficulty-control">
+      Difficulty
+      <select id="difficulty-select" aria-label="Puzzle difficulty"></select>
+    </label>
+  </div>
+
   <div class="mode-bar">
     <button id="play-mode" class="mode-button" type="button">Play Puzzle</button>
     <button id="custom-mode" class="mode-button" type="button">Custom Puzzle</button>
@@ -176,6 +262,11 @@
   <script>
     const GRID_SIZE = 9;
     const gridElement = document.getElementById("grid");
+    const puzzleNameElement = document.getElementById("puzzle-name");
+    const puzzleIdElement = document.getElementById("puzzle-id");
+    const difficultyTagElement = document.getElementById("difficulty-tag");
+    const difficultyControl = document.getElementById("difficulty-control");
+    const difficultySelect = document.getElementById("difficulty-select");
     const inputs = [];
     const modeButtons = {
       play: document.getElementById("play-mode"),
@@ -196,6 +287,36 @@
     let currentSolution = null;
     let currentCheckState = "ready";
     let currentValidationCells = [];
+    let currentDifficulty = "";
+
+    function difficultyClass(difficulty) {
+      return String(difficulty || "custom").toLowerCase();
+    }
+
+    function updateMetadata(
+      availableDifficulties,
+      selectedDifficulty,
+      puzzleId,
+      puzzleName,
+      difficulty,
+    ) {
+      puzzleNameElement.textContent = puzzleName || "Sudoku puzzle";
+      puzzleIdElement.textContent = puzzleId ? `(${puzzleId})` : "";
+      difficultyTagElement.textContent = difficulty || "Custom";
+      difficultyTagElement.className = `difficulty-tag ${difficultyClass(difficulty)}`;
+      currentDifficulty = selectedDifficulty || "";
+
+      const options = availableDifficulties || [];
+      difficultySelect.innerHTML = "";
+      options.forEach((option) => {
+        const optionElement = document.createElement("option");
+        optionElement.value = option;
+        optionElement.textContent = option;
+        optionElement.selected = option === selectedDifficulty;
+        difficultySelect.appendChild(optionElement);
+      });
+      difficultyControl.classList.toggle("hidden", currentMode === "setup");
+    }
 
     function sendMessage(type, data) {
       window.parent.postMessage({
@@ -315,16 +436,36 @@
 
       modeButtons.play.classList.toggle("active", !setup);
       modeButtons.custom.classList.toggle("active", setup);
+      difficultyControl.classList.toggle("hidden", setup);
       actionButtons.check.disabled =
         currentCheckState === "complete" || currentCheckState === "revealed";
     }
 
-    function createGrid(initialGrid, clueGrid, solutionGrid, mode, checkState, validationCells) {
+    function createGrid(
+      initialGrid,
+      clueGrid,
+      solutionGrid,
+      mode,
+      checkState,
+      validationCells,
+      availableDifficulties,
+      selectedDifficulty,
+      puzzleId,
+      puzzleName,
+      difficulty,
+    ) {
       currentMode = mode;
       currentClues = clueGrid || [];
       currentSolution = solutionGrid || null;
       currentCheckState = checkState || "ready";
       currentValidationCells = validationCells || [];
+      updateMetadata(
+        availableDifficulties,
+        selectedDifficulty,
+        puzzleId,
+        puzzleName,
+        difficulty,
+      );
       gridElement.innerHTML = "";
       inputs.length = 0;
       updateActions();
@@ -404,6 +545,9 @@
     });
 
     actionButtons.newPuzzle.addEventListener("click", () => {
+      if (!confirmModeChange("Load another puzzle and discard this puzzle's progress?")) {
+        return;
+      }
       setComponentValue({ action: "new_puzzle", grid: getGrid() });
     });
 
@@ -423,6 +567,20 @@
       setComponentValue({ action: "cancel_custom", grid: getGrid() });
     });
 
+    difficultySelect.addEventListener("change", () => {
+      if (currentMode !== "play") return;
+      if (difficultySelect.value === currentDifficulty) return;
+      if (!confirmModeChange("Changing difficulty will discard this puzzle and any progress. Continue?")) {
+        difficultySelect.value = currentDifficulty;
+        return;
+      }
+      setComponentValue({
+        action: "difficulty",
+        difficulty: difficultySelect.value,
+        grid: getGrid(),
+      });
+    });
+
     window.addEventListener("message", (event) => {
       if (event.data.type === "streamlit:render") {
         createGrid(
@@ -432,6 +590,11 @@
           event.data.args.mode || "play",
           event.data.args.check_state || "ready",
           event.data.args.validation_cells || [],
+          event.data.args.available_difficulties || [],
+          event.data.args.selected_difficulty || "",
+          event.data.args.puzzle_id || "",
+          event.data.args.puzzle_name || "",
+          event.data.args.difficulty || "",
         );
       }
     });
