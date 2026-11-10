@@ -41,9 +41,16 @@ print(generated.grid)
 print(generated.clue_count)
 ```
 
-The generated puzzle is not yet connected to the Streamlit frontend. Difficulty
-rating will be added separately; minimal clue count does not by itself imply a
-human difficulty level.
+Difficulty rating will be added separately; minimal clue count does not by
+itself imply a human difficulty level.
+
+While playing, blank cells expose dynamic candidate pencil marks. Candidates
+that conflict with an existing value in the same row, column, or box are
+disabled and removed from saved notes. The board also shows how many copies of
+each digit remain to be placed. Use `Pencil Mode` to switch between permanent
+answers and temporary working notes; cells remain empty until a digit is entered
+with Pencil Mode off. Invalid pencil attempts identify the conflicting row,
+column, or box and briefly highlight the cells involved.
 
 ## Run the tests
 

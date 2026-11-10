@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from candidates import candidate_sets, remaining_digit_counts
 from puzzles import (
     Puzzle,
     available_difficulties,
@@ -17,15 +18,57 @@ from generator import generate_minimal_puzzle
 
 
 GRID_SIZE = 9
-STATE_VERSION = 3
+STATE_VERSION = 5
 
 
 def _empty_grid() -> list[list[int]]:
     return [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
 
 
+def _empty_notes() -> list[list[list[int]]]:
+    return [[[] for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+
+
 def _copy_grid(grid: list[list[int]]) -> list[list[int]]:
     return [list(row) for row in grid]
+
+
+def _normalise_notes(raw_notes: object) -> list[list[list[int]]]:
+    notes = _empty_notes()
+    if not isinstance(raw_notes, list):
+        return notes
+
+    for row in range(min(GRID_SIZE, len(raw_notes))):
+        raw_row = raw_notes[row]
+        if not isinstance(raw_row, list):
+            continue
+        for column in range(min(GRID_SIZE, len(raw_row))):
+            raw_cell = raw_row[column]
+            if not isinstance(raw_cell, list):
+                continue
+            notes[row][column] = sorted(
+                {
+                    value
+                    for value in raw_cell
+                    if isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and 1 <= value <= GRID_SIZE
+                }
+            )
+    return notes
+
+
+def _combined_grid(
+    visible_grid: list[list[int]],
+    clue_grid: list[list[int]],
+) -> list[list[int]]:
+    return [
+        [
+            clue_grid[row][column] or visible_grid[row][column]
+            for column in range(GRID_SIZE)
+        ]
+        for row in range(GRID_SIZE)
+    ]
 
 
 def _catalogue_grid(puzzle: Puzzle) -> list[list[int]]:
@@ -50,6 +93,8 @@ def _set_puzzle(puzzle: Puzzle) -> None:
     st.session_state.clue_grid = _catalogue_grid(puzzle)
     st.session_state.player_grid = _empty_grid()
     st.session_state.setup_grid = _empty_grid()
+    st.session_state.notes = _empty_notes()
+    st.session_state.pencil_mode = False
     st.session_state.solution_grid = None
     st.session_state.check_state = "ready"
     st.session_state.last_result = None
@@ -96,6 +141,8 @@ def _initialise_state() -> None:
     st.session_state.setdefault("clue_grid", _catalogue_grid(get_puzzles()[0]))
     st.session_state.setdefault("player_grid", _empty_grid())
     st.session_state.setdefault("setup_grid", _empty_grid())
+    st.session_state.setdefault("notes", _empty_notes())
+    st.session_state.setdefault("pencil_mode", False)
     st.session_state.setdefault("solution_grid", None)
     st.session_state.setdefault("check_state", "ready")
     st.session_state.setdefault("last_result", None)
@@ -111,6 +158,8 @@ def _initialise_state() -> None:
 
 def _reset_answers() -> None:
     st.session_state.player_grid = _empty_grid()
+    st.session_state.notes = _empty_notes()
+    st.session_state.pencil_mode = False
     st.session_state.solution_grid = None
     st.session_state.check_state = "ready"
     st.session_state.last_result = None
@@ -122,6 +171,8 @@ def _enter_custom_mode() -> None:
     st.session_state.mode = "setup"
     st.session_state.setup_grid = _empty_grid()
     st.session_state.player_grid = _empty_grid()
+    st.session_state.notes = _empty_notes()
+    st.session_state.pencil_mode = False
     st.session_state.solution_grid = None
     st.session_state.check_state = "ready"
     st.session_state.last_result = None
@@ -192,10 +243,21 @@ def main() -> None:
         display_grid = st.session_state.setup_grid
         clues = _empty_grid()
 
+    combined_grid = _combined_grid(display_grid, clues)
+    python_candidates = candidate_sets(combined_grid)
+    candidate_grid = [
+        [sorted(cell_candidates) for cell_candidates in row]
+        for row in python_candidates
+    ]
+
     component_result = sudoku_grid(
         grid=display_grid,
         clues=clues,
         solution=st.session_state.solution_grid,
+        notes=st.session_state.notes,
+        candidate_sets=candidate_grid,
+        digit_counts=remaining_digit_counts(combined_grid),
+        pencil_mode=st.session_state.pencil_mode,
         mode=st.session_state.mode,
         check_state=st.session_state.check_state,
         validation_cells=st.session_state.validation_cells,
@@ -222,6 +284,28 @@ def main() -> None:
     if component_result:
         action = component_result.get("action")
         visible_grid = component_result.get("grid", display_grid)
+
+        if "pencil_mode" in component_result:
+            st.session_state.pencil_mode = bool(component_result["pencil_mode"])
+
+        if action == "check":
+            st.session_state.notes = _normalise_notes(
+                component_result.get("notes")
+            )
+
+        if action == "set_pencil_mode" and st.session_state.mode == "play":
+            st.session_state.player_grid = _player_grid_from_visible(
+                visible_grid,
+                st.session_state.clue_grid,
+            )
+            st.session_state.notes = _normalise_notes(
+                component_result.get("notes")
+            )
+            st.session_state.pencil_mode = bool(
+                component_result.get("pencil_mode", False)
+            )
+            st.session_state.component_version += 1
+            st.rerun()
 
         if action == "check" and st.session_state.mode == "play":
             player_grid = _player_grid_from_visible(
@@ -293,6 +377,7 @@ def main() -> None:
                 )
                 st.session_state.solution_grid = solution_grid
                 st.session_state.player_grid = _copy_grid(solution_grid)
+                st.session_state.notes = _empty_notes()
                 st.session_state.check_state = "revealed"
                 st.session_state.last_result = None
                 st.session_state.solve_error = None
@@ -326,6 +411,8 @@ def main() -> None:
                     st.session_state.clue_grid = _copy_grid(visible_grid)
                     st.session_state.player_grid = _empty_grid()
                     st.session_state.setup_grid = _empty_grid()
+                    st.session_state.notes = _empty_notes()
+                    st.session_state.pencil_mode = False
                     st.session_state.solution_grid = solution_grid
                     st.session_state.check_state = "ready"
                     st.session_state.last_result = None
@@ -339,6 +426,8 @@ def main() -> None:
 
         elif action == "clear" and st.session_state.mode == "setup":
             st.session_state.setup_grid = _empty_grid()
+            st.session_state.notes = _empty_notes()
+            st.session_state.pencil_mode = False
             st.session_state.solve_error = None
             st.session_state.validation_cells = []
             st.session_state.component_version += 1

@@ -138,21 +138,35 @@
       border-left: 2px solid #111111;
     }
 
-    .sudoku-cell {
+    .sudoku-cell-wrapper {
+      position: relative;
       box-sizing: border-box;
       width: 100%;
       aspect-ratio: 1 / 1;
       min-width: 0;
-      padding: 0;
-      border: 0;
       border-right: 1px solid #333333;
       border-bottom: 1px solid #333333;
+      background: #ffffff;
+    }
+
+    .sudoku-cell {
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      padding: 0;
+      border: 0;
       border-radius: 0;
       outline: none;
       background: #ffffff;
       color: #1f5fbf;
       font-size: clamp(1.1rem, 3vw, 1.55rem);
       text-align: center;
+    }
+
+    .sudoku-cell-wrapper.show-notes .sudoku-cell {
+      height: 48%;
+      font-size: clamp(0.95rem, 2.5vw, 1.25rem);
     }
 
     .sudoku-cell:focus {
@@ -191,13 +205,92 @@
       cursor: default;
     }
 
-    .sudoku-cell:nth-child(3n) {
+    .note-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      height: 52%;
+      padding: 0.1rem 0.2rem 0.2rem;
+      box-sizing: border-box;
+    }
+
+    .note-digit {
+      min-width: 0;
+      padding: 0;
+      color: #1f5fbf;
+      font-weight: 700;
+      font-size: clamp(0.55rem, 1.4vw, 0.75rem);
+      text-align: center;
+      line-height: 1;
+    }
+
+    .sudoku-cell-wrapper:nth-child(3n) {
       border-right: 3px solid #111111;
     }
 
-    .sudoku-cell:nth-child(n + 19):nth-child(-n + 27),
-    .sudoku-cell:nth-child(n + 46):nth-child(-n + 54) {
+    .sudoku-cell-wrapper:nth-child(n + 19):nth-child(-n + 27),
+    .sudoku-cell-wrapper:nth-child(n + 46):nth-child(-n + 54) {
       border-bottom: 3px solid #111111;
+    }
+
+    .digit-counts {
+      display: grid;
+      grid-template-columns: repeat(9, minmax(0, 1fr));
+      max-width: 630px;
+      margin: 0.75rem auto 0;
+      gap: 0.25rem;
+      color: #555555;
+      font-size: 0.72rem;
+      text-align: center;
+    }
+
+    .digit-count {
+      padding: 0.25rem 0.1rem;
+      border: 1px solid #e0e0e0;
+      border-radius: 0.25rem;
+      background: #fafafa;
+    }
+
+    .digit-count strong {
+      display: block;
+      color: #222222;
+      font-size: 0.9rem;
+    }
+
+    .digit-count.invalid {
+      border-color: #ef9a9a;
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .feedback {
+      max-width: 630px;
+      min-height: 1.2rem;
+      margin: 0.45rem auto 0;
+      color: #c62828;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+
+    .sudoku-cell-wrapper.conflict-source {
+      background: #ffebee;
+      box-shadow: inset 0 0 0 3px #e53935;
+    }
+
+    .sudoku-cell-wrapper.invalid-attempt {
+      animation: invalid-jiggle 0.4s ease-in-out;
+    }
+
+    @keyframes invalid-jiggle {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-4px); }
+      40%, 80% { transform: translateX(4px); }
+    }
+
+    .pencil-toggle.active {
+      border-color: #2d6cdf;
+      background: #dbeafe;
+      color: #1f5fbf;
+      font-weight: 700;
     }
 
     .actions {
@@ -248,11 +341,14 @@
   </div>
 
   <div id="grid" class="sudoku-grid" aria-label="Sudoku grid"></div>
+  <div id="digit-counts" class="digit-counts" aria-label="Digits remaining"></div>
+  <div id="feedback" class="feedback" aria-live="polite"></div>
 
   <div class="actions">
+    <button id="pencil-toggle" class="action-button pencil-toggle" type="button">Pencil Mode: Off</button>
     <button id="check" class="action-button primary" type="button">Check Answer</button>
     <button id="reset" class="action-button" type="button">Reset Answers</button>
-      <button id="generate" class="action-button" type="button">Generate Puzzle</button>
+    <button id="generate" class="action-button" type="button">Generate Puzzle</button>
     <button id="new" class="action-button" type="button">New Puzzle</button>
     <button id="reveal" class="action-button" type="button">Reveal Solution</button>
     <button id="create" class="action-button create hidden" type="button">Create Puzzle</button>
@@ -268,12 +364,16 @@
     const difficultyTagElement = document.getElementById("difficulty-tag");
     const difficultyControl = document.getElementById("difficulty-control");
     const difficultySelect = document.getElementById("difficulty-select");
+    const digitCountsElement = document.getElementById("digit-counts");
+    const feedbackElement = document.getElementById("feedback");
     const inputs = [];
+    const cellWrappers = [];
     const modeButtons = {
       play: document.getElementById("play-mode"),
       custom: document.getElementById("custom-mode"),
     };
     const actionButtons = {
+      pencilToggle: document.getElementById("pencil-toggle"),
       check: document.getElementById("check"),
       reset: document.getElementById("reset"),
       generate: document.getElementById("generate"),
@@ -290,6 +390,11 @@
     let currentCheckState = "ready";
     let currentValidationCells = [];
     let currentDifficulty = "";
+    let currentNotes = [];
+    let currentCandidateSets = [];
+    let currentPencilMode = false;
+    let currentFeedback = null;
+    let feedbackTimer = null;
 
     function difficultyClass(difficulty) {
       return String(difficulty || "custom").toLowerCase();
@@ -350,10 +455,263 @@
       }, []);
     }
 
+    function emptyNotes() {
+      return Array.from({ length: GRID_SIZE }, () => (
+        Array.from({ length: GRID_SIZE }, () => [])
+      ));
+    }
+
+    function normaliseNotes(notes) {
+      const normalised = emptyNotes();
+      if (!Array.isArray(notes)) return normalised;
+
+      for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let column = 0; column < GRID_SIZE; column += 1) {
+          const cell = notes?.[row]?.[column];
+          if (!Array.isArray(cell)) continue;
+          normalised[row][column] = [...new Set(cell.filter(
+            (value) => Number.isInteger(value) && value >= 1 && value <= GRID_SIZE,
+          ))];
+        }
+      }
+      return normalised;
+    }
+
+    function calculateCandidates(grid) {
+      const candidates = Array.from({ length: GRID_SIZE }, () => (
+        Array.from({ length: GRID_SIZE }, () => [])
+      ));
+
+      for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let column = 0; column < GRID_SIZE; column += 1) {
+          if (grid[row][column]) continue;
+
+          const used = new Set();
+          for (let index = 0; index < GRID_SIZE; index += 1) {
+            if (grid[row][index]) used.add(grid[row][index]);
+            if (grid[index][column]) used.add(grid[index][column]);
+          }
+
+          const boxRow = Math.floor(row / 3) * 3;
+          const boxColumn = Math.floor(column / 3) * 3;
+          for (let boxRowOffset = 0; boxRowOffset < 3; boxRowOffset += 1) {
+            for (let boxColumnOffset = 0; boxColumnOffset < 3; boxColumnOffset += 1) {
+              const value = grid[boxRow + boxRowOffset][boxColumn + boxColumnOffset];
+              if (value) used.add(value);
+            }
+          }
+
+          candidates[row][column] = Array.from(
+            { length: GRID_SIZE },
+            (_, index) => index + 1,
+          ).filter((value) => !used.has(value));
+        }
+      }
+      return candidates;
+    }
+
+    function updateDigitCounts(grid) {
+      const counts = Array(GRID_SIZE + 1).fill(0);
+      grid.flat().forEach((value) => {
+        if (Number.isInteger(value) && value >= 1 && value <= GRID_SIZE) {
+          counts[value] += 1;
+        }
+      });
+
+      digitCountsElement.innerHTML = "";
+      for (let digit = 1; digit <= GRID_SIZE; digit += 1) {
+        const remaining = GRID_SIZE - counts[digit];
+        const countElement = document.createElement("span");
+        countElement.className = `digit-count${remaining < 0 ? " invalid" : ""}`;
+        countElement.innerHTML = `${digit}<strong>${remaining}</strong>`;
+        digitCountsElement.appendChild(countElement);
+      }
+    }
+
+    function findConflictingCells(grid, row, column, digit) {
+      const conflicts = [];
+      const reasons = [];
+      const seen = new Set();
+
+      function addConflict(conflictRow, conflictColumn, reason) {
+        if (grid[conflictRow][conflictColumn] !== digit) return;
+        const key = `${conflictRow},${conflictColumn}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          conflicts.push([conflictRow, conflictColumn]);
+        }
+        if (!reasons.includes(reason)) reasons.push(reason);
+      }
+
+      for (let index = 0; index < GRID_SIZE; index += 1) {
+        if (index !== column) addConflict(row, index, "row");
+        if (index !== row) addConflict(index, column, "column");
+      }
+
+      const boxRow = Math.floor(row / 3) * 3;
+      const boxColumn = Math.floor(column / 3) * 3;
+      for (let boxRowOffset = 0; boxRowOffset < 3; boxRowOffset += 1) {
+        for (let boxColumnOffset = 0; boxColumnOffset < 3; boxColumnOffset += 1) {
+          const conflictRow = boxRow + boxRowOffset;
+          const conflictColumn = boxColumn + boxColumnOffset;
+          if (conflictRow !== row || conflictColumn !== column) {
+            addConflict(conflictRow, conflictColumn, "box");
+          }
+        }
+      }
+
+      return { conflicts, reasons };
+    }
+
+    function clearInvalidFeedback() {
+      if (feedbackTimer) {
+        clearTimeout(feedbackTimer);
+        feedbackTimer = null;
+      }
+      currentFeedback = null;
+      feedbackElement.textContent = "";
+      feedbackElement.classList.add("hidden");
+    }
+
+    function updateFeedbackStyles(animate = false) {
+      cellWrappers.forEach((wrapper) => {
+        wrapper.classList.remove("conflict-source", "invalid-attempt");
+      });
+
+      if (!currentFeedback) return;
+
+      currentFeedback.conflicts.forEach(([row, column]) => {
+        cellWrappers[row * GRID_SIZE + column].classList.add("conflict-source");
+      });
+
+      const attemptedWrapper = cellWrappers[
+        currentFeedback.row * GRID_SIZE + currentFeedback.column
+      ];
+      if (animate) {
+        void attemptedWrapper.offsetWidth;
+      }
+      attemptedWrapper.classList.add("invalid-attempt");
+    }
+
+    function showInvalidPencilFeedback(grid, row, column, digit) {
+      const conflictInfo = findConflictingCells(grid, row, column, digit);
+      const reasonText = conflictInfo.reasons.length
+        ? conflictInfo.reasons.join(" and ")
+        : "row, column, or box";
+      currentFeedback = {
+        row,
+        column,
+        digit,
+        conflicts: conflictInfo.conflicts,
+      };
+      feedbackElement.textContent = `Digit ${digit} is already in the ${reasonText}.`;
+      feedbackElement.classList.remove("hidden");
+      if (feedbackTimer) clearTimeout(feedbackTimer);
+      refreshDynamicState(true, false);
+      feedbackTimer = setTimeout(() => {
+        clearInvalidFeedback();
+        refreshDynamicState();
+      }, 900);
+    }
+
+    function pruneNotes(grid) {
+      for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let column = 0; column < GRID_SIZE; column += 1) {
+          if (grid[row][column]) {
+            currentNotes[row][column] = [];
+            continue;
+          }
+          const valid = new Set(currentCandidateSets[row][column] || []);
+          currentNotes[row][column] = currentNotes[row][column].filter(
+            (value) => valid.has(value),
+          );
+        }
+      }
+    }
+
+    function updateNoteDisplay(row, column) {
+      const index = row * GRID_SIZE + column;
+      const input = inputs[index];
+      const wrapper = cellWrappers[index];
+      const noteGrid = wrapper.querySelector(".note-grid");
+      const isClue = currentMode === "play" && Boolean(currentClues?.[row]?.[column]);
+      const showNotes = currentMode === "play"
+        && !isClue
+        && input.value.trim() === ""
+        && currentNotes?.[row]?.[column]?.length > 0;
+
+      wrapper.classList.toggle("show-notes", showNotes);
+      noteGrid.classList.toggle("hidden", !showNotes);
+      noteGrid.querySelectorAll(".note-digit").forEach((noteElement) => {
+        const digit = Number(noteElement.dataset.digit);
+        noteElement.textContent = showNotes
+          && currentNotes[row][column].includes(digit)
+          ? String(digit)
+          : "";
+      });
+    }
+
+    function updatePencilMode() {
+      actionButtons.pencilToggle.textContent = `Pencil Mode: ${currentPencilMode ? "On" : "Off"}`;
+      actionButtons.pencilToggle.classList.toggle("active", currentPencilMode);
+    }
+
+    function updateInputAccess(input, row, column) {
+      const clue = currentClues?.[row]?.[column] || 0;
+      input.readOnly = currentMode === "play" && (
+        Boolean(clue)
+        || currentCheckState === "complete"
+        || currentCheckState === "revealed"
+        || (currentPencilMode && input.value.trim() !== "")
+      );
+      input.tabIndex = input.readOnly ? -1 : 0;
+    }
+
+    function refreshDynamicState(animateFeedback = false, pruneCandidateNotes = true) {
+      const grid = getGrid();
+      currentCandidateSets = calculateCandidates(grid);
+      if (pruneCandidateNotes) {
+        pruneNotes(grid);
+      }
+      for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let column = 0; column < GRID_SIZE; column += 1) {
+          updateInputAccess(inputs[row * GRID_SIZE + column], row, column);
+          updateCellStyle(inputs[row * GRID_SIZE + column], row, column);
+          updateNoteDisplay(row, column);
+        }
+      }
+      updateDigitCounts(grid);
+      updateFeedbackStyles(animateFeedback);
+      setFrameHeight();
+    }
+
+    function handlePencilInput(input, row, column) {
+      const digit = Number(input.value);
+      const gridBeforeAttempt = getGrid();
+      gridBeforeAttempt[row][column] = 0;
+      input.value = "";
+
+      if (!currentCandidateSets[row][column].includes(digit)) {
+        showInvalidPencilFeedback(gridBeforeAttempt, row, column, digit);
+        return;
+      }
+
+      const cellNotes = currentNotes[row][column];
+      currentNotes[row][column] = cellNotes.includes(digit)
+        ? cellNotes.filter((note) => note !== digit)
+        : [...cellNotes, digit].sort((a, b) => a - b);
+      refreshDynamicState();
+    }
+
+    function getNotes() {
+      return normaliseNotes(currentNotes);
+    }
+
     function hasProgress() {
+      const hasNotes = currentNotes.some((row) => row.some((cell) => cell.length > 0));
       return currentMode === "setup"
         ? inputs.some((input) => input.value.trim() !== "")
-        : currentCheckState !== "ready" || inputs.some((input, index) => {
+        : currentCheckState !== "ready" || hasNotes || inputs.some((input, index) => {
             const row = Math.floor(index / GRID_SIZE);
             const column = index % GRID_SIZE;
             return !currentClues?.[row]?.[column] && input.value.trim() !== "";
@@ -429,7 +787,7 @@
 
     function updateActions() {
       const setup = currentMode === "setup";
-      [actionButtons.check, actionButtons.reset, actionButtons.generate,
+      [actionButtons.pencilToggle, actionButtons.check, actionButtons.reset, actionButtons.generate,
         actionButtons.newPuzzle, actionButtons.reveal].forEach((button) => {
         button.classList.toggle("hidden", setup);
       });
@@ -439,6 +797,7 @@
       modeButtons.play.classList.toggle("active", !setup);
       modeButtons.custom.classList.toggle("active", setup);
       difficultyControl.classList.toggle("hidden", setup);
+      updatePencilMode();
       actionButtons.check.disabled =
         currentCheckState === "complete" || currentCheckState === "revealed";
     }
@@ -447,6 +806,10 @@
       initialGrid,
       clueGrid,
       solutionGrid,
+      notes,
+      candidateSets,
+      digitCounts,
+      pencilMode,
       mode,
       checkState,
       validationCells,
@@ -459,6 +822,10 @@
       currentMode = mode;
       currentClues = clueGrid || [];
       currentSolution = solutionGrid || null;
+      currentNotes = normaliseNotes(notes);
+      currentCandidateSets = candidateSets || [];
+      currentPencilMode = Boolean(pencilMode);
+      clearInvalidFeedback();
       currentCheckState = checkState || "ready";
       currentValidationCells = validationCells || [];
       updateMetadata(
@@ -470,10 +837,14 @@
       );
       gridElement.innerHTML = "";
       inputs.length = 0;
+      cellWrappers.length = 0;
       updateActions();
 
       for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let column = 0; column < GRID_SIZE; column += 1) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "sudoku-cell-wrapper";
+
           const input = document.createElement("input");
           input.className = "sudoku-cell";
           input.type = "text";
@@ -493,12 +864,28 @@
           input.tabIndex = input.readOnly ? -1 : 0;
           updateCellStyle(input, row, column);
 
+          const noteGrid = document.createElement("div");
+          noteGrid.className = "note-grid hidden";
+          for (let digit = 1; digit <= GRID_SIZE; digit += 1) {
+            const noteElement = document.createElement("span");
+            noteElement.className = "note-digit";
+            noteElement.dataset.digit = String(digit);
+            noteElement.setAttribute("aria-hidden", "true");
+            noteGrid.appendChild(noteElement);
+          }
+
           input.addEventListener("input", () => {
             input.value = input.value.replace(/[^1-9]/g, "").slice(0, 1);
             currentValidationCells = currentValidationCells.filter(
               (cell) => cell[0] !== row || cell[1] !== column,
             );
-            updateCellStyle(input, row, column);
+
+            clearInvalidFeedback();
+            if (currentPencilMode && !input.readOnly && input.value !== "") {
+              handlePencilInput(input, row, column);
+              return;
+            }
+            refreshDynamicState();
           });
 
           input.addEventListener("keydown", (event) => {
@@ -513,67 +900,144 @@
               event.preventDefault();
               const [rowDelta, columnDelta] = moves[event.key];
               focusCell(row + rowDelta, column + columnDelta);
+              return;
+            }
+
+            if (
+              currentPencilMode
+              && !input.readOnly
+              && (event.key === "Backspace" || event.key === "Delete")
+            ) {
+              event.preventDefault();
+              currentNotes[row][column] = [];
+              refreshDynamicState();
             }
           });
 
-          gridElement.appendChild(input);
+          wrapper.appendChild(input);
+          wrapper.appendChild(noteGrid);
+          gridElement.appendChild(wrapper);
           inputs.push(input);
+          cellWrappers.push(wrapper);
         }
       }
 
-      setFrameHeight();
+      refreshDynamicState();
     }
 
     modeButtons.custom.addEventListener("click", () => {
       if (currentMode === "setup") return;
       if (window.confirm("Switching to Custom Puzzle will discard the current puzzle and any progress. Continue?")) {
-        setComponentValue({ action: "custom_puzzle", grid: getGrid() });
+        setComponentValue({
+          action: "custom_puzzle",
+          grid: getGrid(),
+          notes: getNotes(),
+          pencil_mode: currentPencilMode,
+        });
       }
     });
 
     modeButtons.play.addEventListener("click", () => {
       if (currentMode === "play") return;
       if (confirmModeChange("Leave Custom Puzzle mode and discard this custom grid?")) {
-        setComponentValue({ action: "play_mode", grid: getGrid() });
+        setComponentValue({
+          action: "play_mode",
+          grid: getGrid(),
+          notes: getNotes(),
+          pencil_mode: currentPencilMode,
+        });
       }
     });
 
+    actionButtons.pencilToggle.addEventListener("click", () => {
+      if (currentMode === "setup") return;
+      clearInvalidFeedback();
+      currentPencilMode = !currentPencilMode;
+      updatePencilMode();
+      setComponentValue({
+        action: "set_pencil_mode",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
+    });
+
     actionButtons.check.addEventListener("click", () => {
-      setComponentValue({ action: "check", grid: getGrid() });
+      setComponentValue({
+        action: "check",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.reset.addEventListener("click", () => {
-      setComponentValue({ action: "reset_answers", grid: getGrid() });
+      setComponentValue({
+        action: "reset_answers",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.generate.addEventListener("click", () => {
       if (!confirmModeChange("Generate a new puzzle and discard this puzzle's progress?")) {
         return;
       }
-      setComponentValue({ action: "generate_puzzle", grid: getGrid() });
+      setComponentValue({
+        action: "generate_puzzle",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.newPuzzle.addEventListener("click", () => {
       if (!confirmModeChange("Load another puzzle and discard this puzzle's progress?")) {
         return;
       }
-      setComponentValue({ action: "new_puzzle", grid: getGrid() });
+      setComponentValue({
+        action: "new_puzzle",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.reveal.addEventListener("click", () => {
-      setComponentValue({ action: "reveal", grid: getGrid() });
+      setComponentValue({
+        action: "reveal",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.create.addEventListener("click", () => {
-      setComponentValue({ action: "create_puzzle", grid: getGrid() });
+      setComponentValue({
+        action: "create_puzzle",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.clear.addEventListener("click", () => {
-      setComponentValue({ action: "clear", grid: getGrid() });
+      setComponentValue({
+        action: "clear",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     actionButtons.cancel.addEventListener("click", () => {
-      setComponentValue({ action: "cancel_custom", grid: getGrid() });
+      setComponentValue({
+        action: "cancel_custom",
+        grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
+      });
     });
 
     difficultySelect.addEventListener("change", () => {
@@ -587,6 +1051,8 @@
         action: "difficulty",
         difficulty: difficultySelect.value,
         grid: getGrid(),
+        notes: getNotes(),
+        pencil_mode: currentPencilMode,
       });
     });
 
@@ -596,6 +1062,10 @@
           event.data.args.grid || [],
           event.data.args.clues || [],
           event.data.args.solution || null,
+          event.data.args.notes || [],
+          event.data.args.candidate_sets || [],
+          event.data.args.digit_counts || {},
+          event.data.args.pencil_mode || false,
           event.data.args.mode || "play",
           event.data.args.check_state || "ready",
           event.data.args.validation_cells || [],
