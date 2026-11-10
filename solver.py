@@ -28,7 +28,7 @@ def solve_sudoku(grid: Sequence[Sequence[int]]) -> list[list[int]]:
     if errors:
         raise SudokuSolveError("Invalid puzzle:\n" + "\n".join(errors))
 
-    model, x = _build_model()
+    model, x, _ = _build_model()
 
     for row in range(GRID_SIZE):
         for column in range(GRID_SIZE):
@@ -46,7 +46,11 @@ def solve_sudoku(grid: Sequence[Sequence[int]]) -> list[list[int]]:
     ]
 
 
-def _build_model() -> tuple[Model, dict[tuple[int, int], object]]:
+def _build_model() -> tuple[
+    Model,
+    dict[tuple[int, int], object],
+    dict[tuple[int, int, int], object],
+]:
     """Create the base Sudoku model without puzzle-specific givens."""
 
     model = Model(name="Sudoku Model")
@@ -102,5 +106,5 @@ def _build_model() -> tuple[Model, dict[tuple[int, int], object]]:
                 model.sum(p[row, column, value] for value in VALUES) == 1
             )
 
-    return model, x
+    return model, x, p
 

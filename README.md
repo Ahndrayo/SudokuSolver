@@ -17,13 +17,33 @@ in the blue cells, then use `Check Answer`. Correct, incorrect, and blank cells
 are highlighted without replacing the player’s entries. The grid also supports
 Backspace for clearing and arrow keys for moving between cells.
 
-Use the difficulty selector to choose Easy, Medium, Hard, or Expert puzzles.
+Use the difficulty selector to choose Easy, Medium, Hard, Expert, or Generated puzzles.
 Each puzzle has a stable ID, a name, and a difficulty tag. `New Puzzle` cycles
 through the catalogue entries for the selected difficulty.
+
+`Generate Puzzle` creates a new minimal uniquely solvable puzzle for the current
+session. It is not automatically added to `puzzles.json`.
 
 Use the `Custom Puzzle` mode to enter your own clues, then click `Create Puzzle`
 to validate and lock them before playing. Invalid clues remain on the grid and
 are highlighted for correction.
+
+## Generate a minimal puzzle
+
+The backend generator can create a randomized complete solution, remove clues
+while preserving uniqueness, and return a minimal uniquely solvable puzzle:
+
+```python
+from generator import generate_minimal_puzzle
+
+generated = generate_minimal_puzzle(seed=7)
+print(generated.grid)
+print(generated.clue_count)
+```
+
+The generated puzzle is not yet connected to the Streamlit frontend. Difficulty
+rating will be added separately; minimal clue count does not by itself imply a
+human difficulty level.
 
 ## Run the tests
 

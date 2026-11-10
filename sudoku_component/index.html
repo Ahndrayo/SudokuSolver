@@ -252,6 +252,7 @@
   <div class="actions">
     <button id="check" class="action-button primary" type="button">Check Answer</button>
     <button id="reset" class="action-button" type="button">Reset Answers</button>
+      <button id="generate" class="action-button" type="button">Generate Puzzle</button>
     <button id="new" class="action-button" type="button">New Puzzle</button>
     <button id="reveal" class="action-button" type="button">Reveal Solution</button>
     <button id="create" class="action-button create hidden" type="button">Create Puzzle</button>
@@ -275,6 +276,7 @@
     const actionButtons = {
       check: document.getElementById("check"),
       reset: document.getElementById("reset"),
+      generate: document.getElementById("generate"),
       newPuzzle: document.getElementById("new"),
       reveal: document.getElementById("reveal"),
       create: document.getElementById("create"),
@@ -427,8 +429,8 @@
 
     function updateActions() {
       const setup = currentMode === "setup";
-      [actionButtons.check, actionButtons.reset, actionButtons.newPuzzle,
-        actionButtons.reveal].forEach((button) => {
+      [actionButtons.check, actionButtons.reset, actionButtons.generate,
+        actionButtons.newPuzzle, actionButtons.reveal].forEach((button) => {
         button.classList.toggle("hidden", setup);
       });
       [actionButtons.create, actionButtons.clear, actionButtons.cancel]
@@ -542,6 +544,13 @@
 
     actionButtons.reset.addEventListener("click", () => {
       setComponentValue({ action: "reset_answers", grid: getGrid() });
+    });
+
+    actionButtons.generate.addEventListener("click", () => {
+      if (!confirmModeChange("Generate a new puzzle and discard this puzzle's progress?")) {
+        return;
+      }
+      setComponentValue({ action: "generate_puzzle", grid: getGrid() });
     });
 
     actionButtons.newPuzzle.addEventListener("click", () => {

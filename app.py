@@ -13,6 +13,7 @@ from puzzles import (
 from solver import SudokuSolveError, solve_sudoku
 from sudoku_component import sudoku_grid
 from validation import conflicting_cells, validate_grid
+from generator import generate_minimal_puzzle
 
 
 GRID_SIZE = 9
@@ -105,6 +106,7 @@ def _initialise_state() -> None:
     st.session_state.setdefault("current_puzzle_id", default_puzzle.id)
     st.session_state.setdefault("current_puzzle_name", default_puzzle.name)
     st.session_state.setdefault("current_difficulty", default_puzzle.difficulty)
+    st.session_state.setdefault("generated_puzzle_count", 0)
 
 
 def _reset_answers() -> None:
@@ -263,6 +265,24 @@ def main() -> None:
             if requested_difficulty in available_difficulties():
                 st.session_state.selected_difficulty = requested_difficulty
                 _set_default_puzzle()
+            st.session_state.component_version += 1
+            st.rerun()
+
+        elif action == "generate_puzzle" and st.session_state.mode == "play":
+            with st.spinner("Generating a puzzle..."):
+                generated = generate_minimal_puzzle()
+            st.session_state.generated_puzzle_count += 1
+            generated_number = st.session_state.generated_puzzle_count
+            _set_puzzle(
+                Puzzle(
+                    id=f"generated-live-{generated_number:03d}",
+                    name=(
+                        f"Generated Puzzle ({generated.clue_count} clues)"
+                    ),
+                    difficulty="Generated",
+                    grid=generated.grid,
+                )
+            )
             st.session_state.component_version += 1
             st.rerun()
 
